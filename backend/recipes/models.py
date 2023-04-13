@@ -59,7 +59,9 @@ class AmountIngredient(models.Model):
 class Favorite(models.Model):
     """Модель избранных рецептов конкретного пользователя."""
 
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
+    recipe = models.ForeignKey(
+        Recipe, on_delete=models.CASCADE, related_name="favorites"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="favorites"
     )
