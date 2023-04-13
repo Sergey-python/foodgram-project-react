@@ -25,9 +25,16 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
+    "rest_framework.authtoken",
+    "django_filters",
+    "djoser",
     "recipes.apps.RecipesConfig",
     "users.apps.UsersConfig",
+    "payments.apps.PaymentsConfig",
+    "downloadapp.apps.DownloadappConfig",
     "api.apps.ApiConfig",
+    "core.apps.CoreConfig",
 ]
 
 MIDDLEWARE = [
@@ -123,3 +130,24 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 # Custom user model
 
 AUTH_USER_MODEL = "users.User"
+
+
+# Rest framework config
+
+REST_FRAMEWORK = {
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 10,
+}
+
+DJOSER = {
+    "LOGIN_FIELD": "email",
+}
+
+
+DOWNLOADFILES_DIR = os.path.join(BASE_DIR, "downloadapp/downloads")
