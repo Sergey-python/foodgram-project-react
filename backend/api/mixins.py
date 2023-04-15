@@ -3,7 +3,9 @@ from django.core import exceptions as django_exceptions
 from rest_framework.exceptions import ValidationError
 
 
-class SerializerPasswordValidation:
+class MixinPassValidation:
+    """Миксин, предоставляющий метод валидации пароля пользователя."""
+
     @staticmethod
     def validate_user_password(password_value, password_field, user):
         try:

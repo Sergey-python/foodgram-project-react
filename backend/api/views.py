@@ -1,15 +1,15 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import BooleanField, Case, When
 from django.db.utils import IntegrityError
 from django.shortcuts import get_object_or_404
-
-# from django_filters.rest_framework import DjangoFilterBackend
 from downloadapp.utils import DownloadFile
 from payments.models import ShopingCart
 from recipes.models import Favorite, Ingredient, Recipe, Tag
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
+from rest_framework.filters import SearchFilter
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from users.models import Follow
 
+from .filters import RecipeFilter
 from .permissions import IsAuthorOrReadOnly
 from .serializers import (
     FollowSerializer,
@@ -50,11 +51,27 @@ class UserViewSet(ReadOnlyOrCreateViewSet):
             return SetPasswordSerializer
         return UserSerializer
 
+    # Эта штука прекрасно работает для вывода пользователей,
+    # но не работает при выводе рецептов.
+    # Оно и понятно, что кверисет рецептов, ничего не знает об
+    # аннотации, которую мы добавили только здесь.
+    # Чтобы решить это, как будто бы хочется смерджить(сджойнить) кверисет
+    # рецептов и вот этот вот пользовательский, но пока хз как это сделать.
+    # def get_queryset(self):
+    #     queryset = User.objects.annotate(
+    #         is_subscribed=Case(
+    #             When(followers__follower=self.request.user, then=True),
+    #             default=False,
+    #             output_field=BooleanField(),
+    #         )
+    #     )
+    #     return queryset
+
     def _get_request_user(self):
         """Метод получения пользователя из объекта request."""
         return self.request.user
 
-    @action(["get"], detail=False, permission_classes=(IsAuthenticated,))
+    @action(("get",), detail=False, permission_classes=(IsAuthenticated,))
     def me(self, request):
         """
         Метод, предоставляющий эндпоинт /me/.
@@ -63,7 +80,7 @@ class UserViewSet(ReadOnlyOrCreateViewSet):
         self.get_object = self._get_request_user
         return self.retrieve(request)
 
-    @action(["post"], detail=False, permission_classes=(IsAuthenticated,))
+    @action(("post",), detail=False, permission_classes=(IsAuthenticated,))
     def set_password(self, request):
         """
         Метод, предоставляющий эндпоинт /set_password/.
@@ -107,9 +124,7 @@ class FollowView(APIView):
                 follower=request.user, following=following_user
             )
         except IntegrityError:
-            raise ParseError(
-                {"errors": "Вы уже подписаны на этого пользователя!"}
-            )
+            raise ParseError({"errors": "Нельзя подписаться!"})
         serializer = FollowSerializer(following_user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -150,6 +165,8 @@ class IngredientViewSet(ReadOnlyModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
     permission_classes = (AllowAny,)
+    filter_backends = (SearchFilter,)
+    search_fields = ("name",)
 
 
 class RecipeViewSet(ModelViewSet):
@@ -158,8 +175,31 @@ class RecipeViewSet(ModelViewSet):
     Поддерживает полный набор действий.
     """
 
-    queryset = Recipe.objects.all()
     permission_classes = (IsAuthorOrReadOnly,)
+    custom_filter = RecipeFilter()
+
+    def filter_queryset(self, queryset):
+        query_params = self.request.query_params
+        filter_fields = self.custom_filter.get_filter_fields(query_params)
+        return queryset.filter(**filter_fields)
+
+    def get_queryset(self):
+        queryset = Recipe.objects.annotate(
+            is_favorited=Case(
+                When(favorites__user=self.request.user, then=True),
+                default=False,
+                output_field=BooleanField(),
+            ),
+            is_in_shopping_cart=Case(
+                When(
+                    shopping_cart__user=self.request.user,
+                    then=True,
+                ),
+                default=False,
+                output_field=BooleanField(),
+            ),
+        ).select_related("author")
+        return queryset
 
     def get_serializer_class(self):
         if self.action in ("list", "retrive"):
@@ -205,14 +245,10 @@ class ShopingCartView(APIView):
         recipe = get_object_or_404(Recipe, id=id)
         cart, created = ShopingCart.objects.get_or_create(user=request.user)
 
-        cart_recipe = cart.amount_ingredients.filter(recipe=recipe)
-        if cart_recipe.exists():
+        if recipe in cart.recipes.all():
             raise ParseError({"errors": "Рецепт уже добавлен в корзину!"})
 
-        recipe_ingredients = recipe.ingredients.all()
-        for amount_ingredient in recipe_ingredients:
-            cart.amount_ingredients.add(amount_ingredient)
-
+        cart.recipes.add(recipe)
         serializer = ShortRecipeSerializer(recipe)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -220,12 +256,10 @@ class ShopingCartView(APIView):
         recipe = get_object_or_404(Recipe, id=id)
         cart = get_object_or_404(ShopingCart, user=request.user)
 
-        recipe_ingredients = cart.amount_ingredients.filter(recipe=recipe)
-        if not recipe_ingredients.exists():
+        if recipe not in cart.recipes.all():
             raise ParseError({"errors": "Рецепта нет в корзине!"})
 
-        for ingredient in recipe_ingredients:
-            cart.amount_ingredients.remove(ingredient)
+        cart.recipes.remove(recipe)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

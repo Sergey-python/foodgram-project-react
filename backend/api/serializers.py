@@ -2,12 +2,10 @@ import base64
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from payments.models import ShopingCart
-from recipes.models import AmountIngredient, Favorite, Ingredient, Recipe, Tag
+from recipes.models import AmountIngredient, Ingredient, Recipe, Tag
 from rest_framework import serializers
-from users.models import Follow
 
-from .mixins import SerializerPasswordValidation
+from .mixins import MixinPassValidation
 
 User = get_user_model()
 
@@ -33,14 +31,16 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_is_subscribed(self, obj):
         user = self.context["request"].user
+
         if not user.is_authenticated:
             return False
-        user_follow = Follow.objects.filter(follower=user, following=obj)
+
+        user_follow = user.follows.filter(following=obj)
         return user_follow.exists()
 
 
 class UserRegistrationSerializer(
-    SerializerPasswordValidation, serializers.ModelSerializer
+    MixinPassValidation, serializers.ModelSerializer
 ):
     """
     Сериализатор модели User.
@@ -63,9 +63,7 @@ class UserRegistrationSerializer(
         return User.objects.create_user(**validated_data)
 
 
-class SetPasswordSerializer(
-    SerializerPasswordValidation, serializers.Serializer
-):
+class SetPasswordSerializer(MixinPassValidation, serializers.Serializer):
     """
     Сериализатор, предназначенный для сброса паролей пользователей.
     """
@@ -182,28 +180,24 @@ class RecipeListOrRetrieveSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True)
     ingredients = AmountIngredientSerializer(many=True)
     author = UserSerializer()
-    is_favorited = serializers.SerializerMethodField()
-    is_in_shopping_cart = serializers.SerializerMethodField()
+    is_favorited = serializers.BooleanField()
+    is_in_shopping_cart = serializers.BooleanField()
 
     class Meta:
         model = Recipe
-        fields = "__all__"
-
-    def get_is_favorited(self, obj):
-        user = self.context["request"].user
-        if not user.is_authenticated:
-            return False
-        favorite = Favorite.objects.filter(user=user, recipe=obj)
-        return favorite.exists()
-
-    def get_is_in_shopping_cart(self, obj):
-        user = self.context["request"].user
-        if not user.is_authenticated:
-            return False
-        recipe_in_shopping_cart = ShopingCart.objects.filter(
-            user=user, amount_ingredients__recipe=obj
+        fields = (
+            "id",
+            "tags",
+            "ingredients",
+            "author",
+            "is_favorited",
+            "is_in_shopping_cart",
+            "name",
+            "image",
+            "text",
+            "cooking_time",
+            "pub_date",
         )
-        return recipe_in_shopping_cart.exists()
 
 
 class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
@@ -239,7 +233,6 @@ class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
         return new_recipe
 
     def update(self, instance, validated_data):
-        print(dir(instance))
         ingredients = validated_data.pop("ingredients")
         tags = validated_data.pop("tags")
 

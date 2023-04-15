@@ -5,6 +5,7 @@ from .views import (
     FavoriteView,
     FollowListView,
     FollowView,
+    IngredientViewSet,
     RecipeViewSet,
     ShopingCartDownloadView,
     ShopingCartView,
@@ -14,10 +15,10 @@ from .views import (
 
 router = DefaultRouter()
 
-router.register("users", UserViewSet)
+router.register("users", UserViewSet, basename="user")
 router.register("tags", TagViewSet)
-router.register("ingredients", TagViewSet)
-router.register("recipes", RecipeViewSet)
+router.register("ingredients", IngredientViewSet)
+router.register("recipes", RecipeViewSet, basename="recipe")
 
 
 urlpatterns = [

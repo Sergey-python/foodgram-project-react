@@ -19,11 +19,15 @@ class Follow(models.Model):
     )
 
     class Meta:
-        constraints = [
+        constraints = (
             models.UniqueConstraint(
-                fields=["follower", "following"], name="unique_follow"
+                fields=("follower", "following"), name="unique_follow"
             ),
-        ]
+            models.CheckConstraint(
+                check=~models.Q(follower=models.F("following")),
+                name="cant_follow_yourself",
+            ),
+        )
 
     def __str__(self) -> str:
         return f"{self.follower} follower of {self.following}"

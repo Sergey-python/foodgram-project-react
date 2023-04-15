@@ -151,3 +151,6 @@ DJOSER = {
 
 
 DOWNLOADFILES_DIR = os.path.join(BASE_DIR, "downloadapp/downloads")
+
+MIN_VALUE_COOKING_TIME = 1
+MIN_VALUE_AMOUNT = 0

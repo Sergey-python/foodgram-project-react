@@ -14,7 +14,7 @@ class DownloadFile:
         self.content = content
 
     def get_file_path(self) -> str:
-        return settings.DOWNLOADFILES_DIR + "/" + self.file_name
+        return f"{settings.DOWNLOADFILES_DIR}/{self.file_name}"
 
     def make_txt_file_to_dowload(self) -> str:
         file_path = self.get_file_path()
