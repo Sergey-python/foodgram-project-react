@@ -67,9 +67,7 @@ class AmountIngredient(models.Model):
 
     amount = models.FloatField(
         validators=(MinValueValidator(settings.MIN_VALUE_AMOUNT),),
-        error_messages={
-            "errors": "Количество ингредиента не может быть отрицательным!"
-        },
+        error_messages={"errors": "Количество не может быть отрицательным!"},
         default=settings.MIN_VALUE_AMOUNT,
     )
     recipe = models.ForeignKey(

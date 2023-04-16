@@ -1,9 +1,13 @@
 import base64
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 from recipes.models import AmountIngredient, Ingredient, Recipe, Tag
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 
 from .mixins import MixinPassValidation
 
@@ -37,6 +41,7 @@ class UserSerializer(serializers.ModelSerializer):
 
         user_follow = user.follows.filter(following=obj)
         return user_follow.exists()
+        # return False
 
 
 class UserRegistrationSerializer(
@@ -139,27 +144,31 @@ class IngredientSerializer(serializers.ModelSerializer):
     и удаления записей модели AmountIngredient.
     """
 
-    id = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
-
     class Meta:
         model = Ingredient
         fields = "__all__"
         read_only_fields = ("name", "measurement_unit")
 
 
-class AmountIngredientSerializer(serializers.ModelSerializer):
-    """
-    Сериализатор для модели AmountIngredient.
-    Используется, как вложенный сериализатор для вывода информации
-    о количестве ингредиента, указанного в рецепте.
-    Также используется при создании и изменении рецепта.
-    """
+class AmountIngredientSerializer(serializers.Serializer):
+    """Сериализатор, предназначенный для записи количества ингредиента."""
 
-    ingredient = IngredientSerializer()
+    id = serializers.IntegerField()
+    amount = serializers.FloatField()
 
-    class Meta:
-        model = AmountIngredient
-        fields = ("amount", "ingredient")
+    def validate_id(self, value):
+        try:
+            get_object_or_404(Ingredient, id=value)
+        except Http404:
+            raise ValidationError({"errors": "Такого ингредиента нет!"})
+        return value
+
+    def validate_amount(self, value):
+        if value < settings.MIN_VALUE_AMOUNT:
+            raise ValidationError(
+                {"errors": "Количество не может быть отрицательным!"}
+            )
+        return value
 
 
 class Base64ImageField(serializers.ImageField):
@@ -178,7 +187,7 @@ class RecipeListOrRetrieveSerializer(serializers.ModelSerializer):
     """
 
     tags = TagSerializer(many=True)
-    ingredients = AmountIngredientSerializer(many=True)
+    ingredients = serializers.SerializerMethodField()
     author = UserSerializer()
     is_favorited = serializers.BooleanField()
     is_in_shopping_cart = serializers.BooleanField()
@@ -198,6 +207,18 @@ class RecipeListOrRetrieveSerializer(serializers.ModelSerializer):
             "cooking_time",
             "pub_date",
         )
+
+    def get_ingredients(self, obj):
+        ingredients = []
+        for ingredient in obj.ingredients.all():
+            ingredient_json = {
+                "id": ingredient.ingredient.id,
+                "name": ingredient.ingredient.name,
+                "measurement_unit": ingredient.ingredient.measurement_unit,
+                "amount": ingredient.amount,
+            }
+            ingredients.append(ingredient_json)
+        return ingredients
 
 
 class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
@@ -224,7 +245,8 @@ class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
 
         for ingredient in ingredients:
             amount = ingredient["amount"]
-            ingredient = ingredient["ingredient"]["id"]
+            ingredient = Ingredient.objects.get(id=ingredient["id"])
+
             AmountIngredient.objects.create(
                 amount=amount,
                 recipe=new_recipe,
@@ -241,7 +263,7 @@ class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
 
         for ingredient in ingredients:
             amount = ingredient["amount"]
-            ingredient = ingredient["ingredient"]["id"]
+            ingredient = Ingredient.objects.get(id=ingredient["id"])
             AmountIngredient.objects.update_or_create(
                 recipe=instance,
                 ingredient=ingredient,

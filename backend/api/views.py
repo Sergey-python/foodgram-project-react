@@ -153,6 +153,7 @@ class TagViewSet(ReadOnlyModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
     permission_classes = (AllowAny,)
+    pagination_class = None
 
 
 class IngredientViewSet(ReadOnlyModelViewSet):
@@ -165,6 +166,7 @@ class IngredientViewSet(ReadOnlyModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
     permission_classes = (AllowAny,)
+    pagination_class = None
     filter_backends = (SearchFilter,)
     search_fields = ("name",)
 
@@ -181,30 +183,54 @@ class RecipeViewSet(ModelViewSet):
     def filter_queryset(self, queryset):
         query_params = self.request.query_params
         filter_fields = self.custom_filter.get_filter_fields(query_params)
+        for key, value in filter_fields.items():
+            if key in self.custom_filter.Meta.many_to_many_fields:
+                queryset = queryset.filter(**{key: value}).distinct()
+            queryset = queryset.filter(**{key: value})
         return queryset.filter(**filter_fields)
 
     def get_queryset(self):
-        queryset = Recipe.objects.annotate(
-            is_favorited=Case(
-                When(favorites__user=self.request.user, then=True),
-                default=False,
-                output_field=BooleanField(),
-            ),
-            is_in_shopping_cart=Case(
-                When(
-                    shopping_cart__user=self.request.user,
-                    then=True,
+        user = self.request.user
+        if not user.is_authenticated:
+            user = None
+        queryset = (
+            Recipe.objects.annotate(
+                is_favorited=Case(
+                    When(favorites__user=user, then=True),
+                    default=False,
+                    output_field=BooleanField(),
                 ),
-                default=False,
-                output_field=BooleanField(),
-            ),
-        ).select_related("author")
+                is_in_shopping_cart=Case(
+                    When(
+                        shopping_cart__user=user,
+                        then=True,
+                    ),
+                    default=False,
+                    output_field=BooleanField(),
+                ),
+            )
+            .select_related("author")
+            .prefetch_related("ingredients", "tags")
+        )
         return queryset
 
     def get_serializer_class(self):
-        if self.action in ("list", "retrive"):
+        if self.action in ("list", "retrieve"):
             return RecipeListOrRetrieveSerializer
         return RecipeCreateUpdateDestroySerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        instance = self.get_queryset().get(id=instance.id)
+        serializer = RecipeListOrRetrieveSerializer(
+            instance, context={"request": request}
+        )
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
 
 
 class FavoriteView(APIView):

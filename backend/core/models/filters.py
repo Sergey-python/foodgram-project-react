@@ -7,8 +7,12 @@ class FilterClass:
 
     def get_filter_fields(self, query_params):
         return {
-            self.get_filter_field(key): self.get_filter_values(key, values)
-            for key, values in query_params.items()
+            self.get_filter_field(key): set(
+                map(
+                    getattr(self, key).convert_value, query_params.getlist(key)
+                )
+            )
+            for key in query_params
             if key in self.Meta.fields
         }
 

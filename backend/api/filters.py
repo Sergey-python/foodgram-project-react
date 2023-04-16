@@ -13,3 +13,4 @@ class RecipeFilter(filters.FilterClass):
 
     class Meta:
         fields = ("author", "tags", "is_favorited", "is_in_shopping_cart")
+        many_to_many_fields = ("tags__slug__in",)
