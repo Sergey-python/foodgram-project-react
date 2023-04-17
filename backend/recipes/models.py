@@ -101,7 +101,7 @@ class Favorite(models.Model):
     )
 
     def __str__(self) -> str:
-        return f"{self.user.name} {self.recipe.name}"
+        return f"{self.user.get_full_name()} {self.recipe.name}"
 
     class Meta:
         constraints = (
