@@ -3,6 +3,7 @@ import base64
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
+from django.db.transaction import atomic
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from recipes.models import AmountIngredient, Ingredient, Recipe, Tag
@@ -41,7 +42,6 @@ class UserSerializer(serializers.ModelSerializer):
 
         user_follow = user.follows.filter(following=obj)
         return user_follow.exists()
-        # return False
 
 
 class UserRegistrationSerializer(
@@ -132,7 +132,7 @@ class TagSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tag
-        fields = "__all__"
+        fields = ("id", "name", "color", "slug")
         read_only_fields = ("name", "color", "slug")
 
 
@@ -140,18 +140,20 @@ class IngredientSerializer(serializers.ModelSerializer):
     """
     Сериализатор для модели Ingredient.
     Предназначен для вывода информации об ингредиентах.
-    Также используется, как вложенный сериализатор для создания, изменения
-    и удаления записей модели AmountIngredient.
     """
 
     class Meta:
         model = Ingredient
-        fields = "__all__"
+        fields = ("id", "name", "measurement_unit")
         read_only_fields = ("name", "measurement_unit")
 
 
 class AmountIngredientSerializer(serializers.Serializer):
-    """Сериализатор, предназначенный для записи количества ингредиента."""
+    """
+    Сериализатор, предназначенный для создании записи о количестве ингредиента.
+    Используется, как вложенный для сериализатора
+    RecipeCreateUpdateDestroySerializer.
+    """
 
     id = serializers.IntegerField()
     amount = serializers.FloatField()
@@ -224,7 +226,7 @@ class RecipeListOrRetrieveSerializer(serializers.ModelSerializer):
 class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
     """
     Сериализатор модели Reicpe.
-    Предназначенный для создания, изменения и удаления рецепта.
+    Предназначен для создания, изменения и удаления рецепта.
     """
 
     ingredients = AmountIngredientSerializer(many=True)
@@ -235,6 +237,7 @@ class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
         model = Recipe
         exclude = ("id",)
 
+    @atomic
     def create(self, validated_data):
         ingredients = validated_data.pop("ingredients")
         tags = validated_data.pop("tags")
@@ -254,6 +257,7 @@ class RecipeCreateUpdateDestroySerializer(serializers.ModelSerializer):
             )
         return new_recipe
 
+    @atomic
     def update(self, instance, validated_data):
         ingredients = validated_data.pop("ingredients")
         tags = validated_data.pop("tags")

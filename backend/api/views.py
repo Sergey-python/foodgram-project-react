@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import BooleanField, Case, When
+from django.db.models import Exists, OuterRef
 from django.db.utils import IntegrityError
 from django.shortcuts import get_object_or_404
 from downloadapp.utils import DownloadFile
@@ -10,7 +10,6 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
 from rest_framework.filters import SearchFilter
-from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -41,31 +40,21 @@ class UserViewSet(ReadOnlyOrCreateViewSet):
     Поддерживает полный набор действий.
     """
 
-    queryset = User.objects.all()
     permission_classes = (AllowAny,)
+
+    def get_queryset(self):
+        if self.action == "subscriptions":
+            return User.objects.filter(followers__follower=self.request.user)
+        return User.objects.all()
 
     def get_serializer_class(self):
         if self.action == "create":
             return UserRegistrationSerializer
         if self.action == "set_password":
             return SetPasswordSerializer
+        if self.action == "subscriptions":
+            return FollowSerializer
         return UserSerializer
-
-    # Эта штука прекрасно работает для вывода пользователей,
-    # но не работает при выводе рецептов.
-    # Оно и понятно, что кверисет рецептов, ничего не знает об
-    # аннотации, которую мы добавили только здесь.
-    # Чтобы решить это, как будто бы хочется смерджить(сджойнить) кверисет
-    # рецептов и вот этот вот пользовательский, но пока хз как это сделать.
-    # def get_queryset(self):
-    #     queryset = User.objects.annotate(
-    #         is_subscribed=Case(
-    #             When(followers__follower=self.request.user, then=True),
-    #             default=False,
-    #             output_field=BooleanField(),
-    #         )
-    #     )
-    #     return queryset
 
     def _get_request_user(self):
         """Метод получения пользователя из объекта request."""
@@ -94,25 +83,19 @@ class UserViewSet(ReadOnlyOrCreateViewSet):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-
-class FollowListView(ListAPIView):
-    """
-    Класс-контроллер модели User.
-    Поддерживает ограниченный набор действий: list.
-    Предназначен для получения пользователей, на которых подписан
-    текущий пользователь.
-    """
-
-    serializer_class = FollowSerializer
-
-    def get_queryset(self):
-        user = self.request.user
-        return User.objects.filter(followers__follower=user)
+    @action(("get",), detail=False, permission_classes=(IsAuthenticated,))
+    def subscriptions(self, request):
+        """
+        Метод, предоставляющий эндпоинт /subscriptions/.
+        По нему можно получить список пользователей, на которых
+        подписан текущий пользователь.
+        """
+        return self.list(request)
 
 
 class FollowView(APIView):
     """
-    Класс-контроллер модели User.
+    API класс-контроллер.
     Поддерживает типы запросов: post, delete.
     Предназначен для создания и удаления подписки.
     """
@@ -183,36 +166,28 @@ class RecipeViewSet(ModelViewSet):
     def filter_queryset(self, queryset):
         query_params = self.request.query_params
         filter_fields = self.custom_filter.get_filter_fields(query_params)
-        for key, value in filter_fields.items():
-            if key in self.custom_filter.Meta.many_to_many_fields:
-                queryset = queryset.filter(**{key: value}).distinct()
-            queryset = queryset.filter(**{key: value})
-        return queryset.filter(**filter_fields)
+        return queryset.filter(**filter_fields).distinct()
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
             user = None
-        queryset = (
-            Recipe.objects.annotate(
-                is_favorited=Case(
-                    When(favorites__user=user, then=True),
-                    default=False,
-                    output_field=BooleanField(),
+        return (
+            Recipe.objects.select_related("author")
+            .prefetch_related("ingredients", "tags")
+            .annotate(
+                is_in_shopping_cart=Exists(
+                    ShopingCart.objects.filter(
+                        user=self.request.user, recipes=OuterRef("pk")
+                    )
                 ),
-                is_in_shopping_cart=Case(
-                    When(
-                        shopping_cart__user=user,
-                        then=True,
-                    ),
-                    default=False,
-                    output_field=BooleanField(),
+                is_favorited=Exists(
+                    Favorite.objects.filter(
+                        user=self.request.user, recipe=OuterRef("pk")
+                    )
                 ),
             )
-            .select_related("author")
-            .prefetch_related("ingredients", "tags")
         )
-        return queryset
 
     def get_serializer_class(self):
         if self.action in ("list", "retrieve"):
@@ -235,7 +210,7 @@ class RecipeViewSet(ModelViewSet):
 
 class FavoriteView(APIView):
     """
-    Класс-контроллер модели Favorite.
+    API класс-контроллер.
     Поддерживает типы запросов: post, delete.
     Предназначен для добавления и удаления рецепта из списка избранного.
     """
@@ -262,7 +237,7 @@ class FavoriteView(APIView):
 
 class ShopingCartView(APIView):
     """
-    Класс-контроллер модели ShopingCart.
+    API класс-контроллер.
     Поддерживает типы запросов: post, delete.
     Предназначен для добавления и удаления рецепта из корзины покупок.
     """
@@ -291,9 +266,9 @@ class ShopingCartView(APIView):
 
 class ShopingCartDownloadView(APIView):
     """
-    Класс-контроллер модели ShopingCart.
+    API класс-контроллер.
     Поддерживает типы запросов: get.
-    Предназначен для скачивания файла со списком ингредиентов корзины.
+    Предназначен для скачивания файла со списком ингредиентов из корзины.
     """
 
     def get(self, request):

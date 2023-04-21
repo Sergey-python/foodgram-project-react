@@ -7,7 +7,7 @@ SECRET_KEY = os.getenv(
     "SECRET_KEY", "dd5pbu&22+8o3&i_qn5ssy2924%_@1l#=l0v%f7&mzgpa=y%-("
 )
 
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ["*"]
 
@@ -23,7 +23,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",
-    "corsheaders",
     "django_filters",
     "djoser",
     "recipes.apps.RecipesConfig",
@@ -37,7 +36,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -150,12 +148,6 @@ REST_FRAMEWORK = {
 DJOSER = {
     "LOGIN_FIELD": "email",
 }
-
-
-CORS_URLS_REGEX = r"^/api/.*$"
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
 
 
 DOWNLOADFILES_DIR = os.path.join(BASE_DIR, "downloadapp/downloads")
